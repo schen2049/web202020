@@ -507,17 +507,40 @@
     setButtonsIdle();
   });
 
+  // ── Persistence ───────────────────────────────────────────────────────────
+  function saveSettings() {
+    localStorage.setItem('workValue', workValue.value);
+    localStorage.setItem('workUnit',  workUnit.value);
+    localStorage.setItem('restValue', restValue.value);
+    localStorage.setItem('restUnit',  restUnit.value);
+  }
+
+  function loadSettings() {
+    const wv = localStorage.getItem('workValue');
+    const wu = localStorage.getItem('workUnit');
+    const rv = localStorage.getItem('restValue');
+    const ru = localStorage.getItem('restUnit');
+    if (wv !== null) workValue.value = wv;
+    if (wu !== null) workUnit.value  = wu;
+    if (rv !== null) restValue.value = rv;
+    if (ru !== null) restUnit.value  = ru;
+  }
+
   // ── Update display when settings change (only in idle state) ──────────────
   function onSettingChange() {
     if (state === 'idle') {
       timeLeft = toSec(workValue.value, workUnit.value);
       timerEl.textContent = fmt(timeLeft);
     }
+    saveSettings();
   }
   workValue.addEventListener('input',  onSettingChange);
   workUnit.addEventListener('change',  onSettingChange);
+  restValue.addEventListener('input',  onSettingChange);
+  restUnit.addEventListener('change',  onSettingChange);
 
   // ── Init ──────────────────────────────────────────────────────────────────
+  loadSettings();
   timeLeft = toSec(workValue.value, workUnit.value);
   timerEl.textContent = fmt(timeLeft);
   updateNotifBar();
