@@ -247,6 +247,7 @@
   let timeLeft     = 0;        // seconds
   let ticker       = null;
   let titleFlasher = null;
+  let audioCtx     = null;
   const BASE_TITLE = document.title;
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -266,8 +267,8 @@
 
   function updateDisplay() {
     timerEl.textContent = fmt(timeLeft);
-    if (state === 'work')  document.title = `${fmt(timeLeft)} – Work | Break Timer`;
-    if (state === 'rest')  document.title = `${fmt(timeLeft)} – Rest | Break Timer`;
+    if (state === 'work')  document.title = `${fmt(timeLeft)} – Work | 20-20-20`;
+    if (state === 'rest')  document.title = `${fmt(timeLeft)} – Rest | 20-20-20`;
   }
 
   // ── Title flashing ────────────────────────────────────────────────────────
@@ -284,6 +285,38 @@
   function stopFlash() {
     clearInterval(titleFlasher);
     titleFlasher = null;
+  }
+
+  // ── Audio chime (Web Audio API – no files, works in background tabs) ───────
+  // AudioContext must be created/resumed from a user gesture; we do that in
+  // the Start button handler so it's already unlocked when the timer fires.
+  function initAudio() {
+    try {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      // Some browsers suspend the context after a period of silence; resume it.
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+    } catch (_) {}
+  }
+
+  // Three-tone ascending chime: A5 → C6 → E6
+  function playChime() {
+    if (!audioCtx) return;
+    const now = audioCtx.currentTime;
+    [[880, 0], [1046, 0.22], [1318, 0.44]].forEach(([freq, delay]) => {
+      const osc  = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0, now + delay);
+      gain.gain.linearRampToValueAtTime(0.35, now + delay + 0.04);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + delay + 0.55);
+      osc.start(now + delay);
+      osc.stop(now + delay + 0.6);
+    });
   }
 
   // ── Notifications ─────────────────────────────────────────────────────────
@@ -321,39 +354,48 @@
     }
   }
 
-  /**
-   * Show a browser notification (Chrome + Firefox compatible).
-   * Returns true if a blocking alert() was used (so callers know
-   * not to also wait with setTimeout).
-   */
-  function notify(title, body) {
-    // Best-effort tab focus (works when tab was previously focused)
-    try { window.focus(); } catch (_) {}
+  // Shows notification and calls onDone() once the user acknowledges it.
+  // If the tab is already focused, onDone fires after a short delay automatically.
+  // If the tab is backgrounded, onDone fires only when the user clicks the
+  // notification (which also refocuses the tab via the user-gesture window.focus()).
+  function notify(title, body, onDone) {
+    playChime();
+    flashTitle(title);
 
     if (notifSupported() && Notification.permission === 'granted') {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        try { window.focus(); } catch (_) {}
+        onDone();
+      };
+
       try {
         const n = new Notification(title, {
           body,
-          // requireInteraction keeps the notification visible until dismissed.
-          // Supported in Chrome; Firefox silently ignores it on some platforms.
-          requireInteraction: true,
-          // Inline SVG data URI for the icon – no extra files needed.
+          requireInteraction: true, // stays until user dismisses; works on Chrome + Firefox desktop
           icon: 'data:image/svg+xml,' + encodeURIComponent(
             '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">' +
             '<text y=".9em" font-size="90">⏰</text></svg>'
           ),
         });
-        n.addEventListener('click', () => { try { window.focus(); } catch (_) {} n.close(); });
+        n.addEventListener('click',  () => { n.close(); finish(); });
+        n.addEventListener('close',  finish); // also fires if user dismisses via X
       } catch (e) {
-        // Notification constructor can throw in some sandboxed contexts
+        // Notification unavailable in this context — fall through to auto-transition
+        setTimeout(finish, 1200);
+        return;
       }
-      flashTitle(title);
-      return false; // non-blocking
+
+      // If the tab is already focused there's nothing to refocus — proceed automatically.
+      if (document.hasFocus()) setTimeout(finish, 1200);
+      // Otherwise wait for the notification click to refocus + proceed.
+      return;
     }
 
-    // Fallback: blocking alert (always works, every browser)
-    alert(`${title}\n\n${body}`);
-    return true; // blocking – caller should NOT use setTimeout delay
+    // Notifications not available or denied — auto-transition after short delay.
+    setTimeout(onDone, 1200);
   }
 
   // ── Core timer logic ──────────────────────────────────────────────────────
@@ -370,20 +412,10 @@
 
     if (state === 'work') {
       setTimerClass('alert');
-      const blocking = notify('Time for a break!', 'Look away and rest your eyes.');
-      if (blocking) {
-        beginRest();
-      } else {
-        setTimeout(beginRest, 1200);
-      }
+      notify('Time for a break!', 'Click to start your rest timer.', beginRest);
     } else if (state === 'rest') {
       setTimerClass('alert');
-      const blocking = notify('Break over!', 'Back to work – timer restarting.');
-      if (blocking) {
-        beginWork();
-      } else {
-        setTimeout(beginWork, 1200);
-      }
+      notify('Break over!', 'Click to start the work timer.', beginWork);
     }
   }
 
@@ -432,7 +464,8 @@
 
   // ── Button handlers ───────────────────────────────────────────────────────
   startBtn.addEventListener('click', async () => {
-    // Ask for permission on first Start (required by Firefox from user gesture)
+    // Unlock AudioContext and request notification permission during this user gesture.
+    initAudio();
     if (notifSupported() && Notification.permission === 'default') {
       await askNotifPermission();
     }
@@ -457,7 +490,7 @@
     pausedFrom = state;
     state      = 'paused';
     setLabel('Paused');
-    document.title = `Paused | Break Timer`;
+    document.title = `Paused | 20-20-20`;
     setButtonsPaused();
   });
 
