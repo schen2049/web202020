@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Break Timer</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f0f1a;
+      --surface: #1a1a2e;
+      --border: #2a2a4a;
+      --input-bg: #111128;
+      --text: #e8e8f0;
+      --muted: #7070a0;
+      --work: #ffffff;
+      --rest: #4fc3f7;
+      --alert: #ff7043;
+      --green: #4caf50;
+      --green-h: #388e3c;
+      --amber: #ffa726;
+      --amber-h: #e65100;
+      --red: #ef5350;
+      --red-h: #c62828;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem 1rem;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 520px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2rem;
+    }
+
+    /* ── Phase label ── */
+    .phase-label {
+      font-size: 0.85rem;
+      font-weight: 600;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--muted);
+      height: 1.2em;
+    }
+
+    /* ── Timer display ── */
+    .timer-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.4rem;
+      width: 100%;
+    }
+
+    #timerDisplay {
+      font-size: clamp(5rem, 22vw, 9rem);
+      font-weight: 200;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.04em;
+      line-height: 1;
+      color: var(--work);
+      transition: color 0.4s;
+      user-select: none;
+    }
+
+    #timerDisplay.rest  { color: var(--rest); }
+    #timerDisplay.alert { color: var(--alert); animation: pulse 0.6s ease-in-out infinite; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.4; }
+    }
+
+    /* ── Settings card ── */
+    .settings {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1.4rem 1.6rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .setting-row {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .setting-label {
+      flex: 1;
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+
+    input[type="number"] {
+      width: 68px;
+      padding: 0.45rem 0.5rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--input-bg);
+      color: var(--text);
+      font-size: 1rem;
+      text-align: center;
+      appearance: textfield;
+      -moz-appearance: textfield;
+    }
+    input[type="number"]::-webkit-inner-spin-button,
+    input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; }
+    input[type="number"]:focus { outline: none; border-color: var(--rest); }
+
+    select {
+      padding: 0.45rem 0.5rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--input-bg);
+      color: var(--text);
+      font-size: 0.95rem;
+      cursor: pointer;
+    }
+    select:focus { outline: none; border-color: var(--rest); }
+
+    /* ── Buttons ── */
+    .buttons {
+      display: flex;
+      gap: 0.8rem;
+      justify-content: center;
+      width: 100%;
+    }
+
+    button {
+      flex: 1;
+      padding: 0.75rem 1rem;
+      border: none;
+      border-radius: 10px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s, opacity 0.2s;
+      max-width: 150px;
+    }
+    button:active:not(:disabled) { transform: scale(0.96); }
+    button:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    #startBtn  { background: var(--green); color: #fff; }
+    #startBtn:hover:not(:disabled) { background: var(--green-h); }
+
+    #pauseBtn  { background: var(--amber); color: #fff; }
+    #pauseBtn:hover:not(:disabled) { background: var(--amber-h); }
+
+    #resetBtn  { background: var(--red); color: #fff; }
+    #resetBtn:hover:not(:disabled) { background: var(--red-h); }
+
+    /* ── Notification status ── */
+    .notif-bar {
+      font-size: 0.78rem;
+      color: var(--muted);
+      text-align: center;
+      min-height: 1.4em;
+    }
+
+    .notif-bar button {
+      display: inline;
+      flex: unset;
+      max-width: unset;
+      padding: 0.2rem 0.7rem;
+      font-size: 0.78rem;
+      font-weight: 500;
+      background: var(--border);
+      color: var(--text);
+      border-radius: 6px;
+      margin-left: 0.4rem;
+      vertical-align: middle;
+    }
+    .notif-bar button:hover { background: #3a3a6a; }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <div class="timer-wrap">
+    <div class="phase-label" id="phaseLabel">Ready</div>
+    <div id="timerDisplay">20:00</div>
+  </div>
+
+  <div class="settings">
+    <div class="setting-row">
+      <span class="setting-label">Time between alerts</span>
+      <input type="number" id="workValue" value="20" min="1" max="999" />
+      <select id="workUnit">
+        <option value="seconds">seconds</option>
+        <option value="minutes" selected>minutes</option>
+        <option value="hours">hours</option>
+      </select>
+    </div>
+    <div class="setting-row">
+      <span class="setting-label">Rest time</span>
+      <input type="number" id="restValue" value="20" min="1" max="999" />
+      <select id="restUnit">
+        <option value="seconds" selected>seconds</option>
+        <option value="minutes">minutes</option>
+        <option value="hours">hours</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="buttons">
+    <button id="startBtn">Start</button>
+    <button id="pauseBtn" disabled>Pause</button>
+    <button id="resetBtn">Reset</button>
+  </div>
+
+  <div class="notif-bar" id="notifBar"></div>
+
+</div>
+<script>
+  // ── Elements ──────────────────────────────────────────────────────────────
+  const timerEl   = document.getElementById('timerDisplay');
+  const labelEl   = document.getElementById('phaseLabel');
+  const startBtn  = document.getElementById('startBtn');
+  const pauseBtn  = document.getElementById('pauseBtn');
+  const resetBtn  = document.getElementById('resetBtn');
+  const workValue = document.getElementById('workValue');
+  const workUnit  = document.getElementById('workUnit');
+  const restValue = document.getElementById('restValue');
+  const restUnit  = document.getElementById('restUnit');
+  const notifBar  = document.getElementById('notifBar');
+
+  // ── State ─────────────────────────────────────────────────────────────────
+  let state        = 'idle';   // idle | work | rest | paused
+  let pausedFrom   = null;
+  let timeLeft     = 0;        // seconds
+  let ticker       = null;
+  let titleFlasher = null;
+  const BASE_TITLE = document.title;
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  function toSec(val, unit) {
+    const n = Math.max(1, parseInt(val) || 1);
+    return unit === 'hours' ? n * 3600 : unit === 'minutes' ? n * 60 : n;
+  }
+
+  function fmt(sec) {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  }
+
+  function setLabel(text)    { labelEl.textContent = text; }
+  function setTimerClass(cl) { timerEl.className = cl; }
+
+  function updateDisplay() {
+    timerEl.textContent = fmt(timeLeft);
+    if (state === 'work')  document.title = `${fmt(timeLeft)} – Work | Break Timer`;
+    if (state === 'rest')  document.title = `${fmt(timeLeft)} – Rest | Break Timer`;
+  }
+
+  // ── Title flashing ────────────────────────────────────────────────────────
+  function flashTitle(msg, durationMs = 12000) {
+    clearInterval(titleFlasher);
+    let tog = true;
+    titleFlasher = setInterval(() => {
+      document.title = tog ? `🔔 ${msg}` : BASE_TITLE;
+      tog = !tog;
+    }, 700);
+    setTimeout(() => stopFlash(), durationMs);
+  }
+
+  function stopFlash() {
+    clearInterval(titleFlasher);
+    titleFlasher = null;
+  }
+
+  // ── Notifications ─────────────────────────────────────────────────────────
+  function notifSupported() { return 'Notification' in window; }
+
+  function updateNotifBar() {
+    if (!notifSupported()) {
+      notifBar.textContent = 'Browser notifications not supported – will use alert fallback.';
+      return;
+    }
+    if (Notification.permission === 'granted') {
+      notifBar.textContent = '';
+    } else if (Notification.permission === 'denied') {
+      notifBar.textContent = 'Notifications blocked by browser – will use alert fallback.';
+    } else {
+      notifBar.innerHTML = 'Enable notifications for best experience.';
+      const btn = document.createElement('button');
+      btn.textContent = 'Enable';
+      btn.addEventListener('click', askNotifPermission);
+      notifBar.appendChild(btn);
+    }
+  }
+
+  async function askNotifPermission() {
+    if (!notifSupported()) return;
+    // Firefox requires this to be called directly from a user gesture;
+    // Chrome accepts it anywhere. We always call it on Start as well.
+    try {
+      const result = await Notification.requestPermission();
+      updateNotifBar();
+      return result === 'granted';
+    } catch (e) {
+      updateNotifBar();
+      return false;
+    }
+  }
+
+  /**
+   * Show a browser notification (Chrome + Firefox compatible).
+   * Returns true if a blocking alert() was used (so callers know
+   * not to also wait with setTimeout).
+   */
+  function notify(title, body) {
+    // Best-effort tab focus (works when tab was previously focused)
+    try { window.focus(); } catch (_) {}
+
+    if (notifSupported() && Notification.permission === 'granted') {
+      try {
+        const n = new Notification(title, {
+          body,
+          // requireInteraction keeps the notification visible until dismissed.
+          // Supported in Chrome; Firefox silently ignores it on some platforms.
+          requireInteraction: true,
+          // Inline SVG data URI for the icon – no extra files needed.
+          icon: 'data:image/svg+xml,' + encodeURIComponent(
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">' +
+            '<text y=".9em" font-size="90">⏰</text></svg>'
+          ),
+        });
+        n.addEventListener('click', () => { try { window.focus(); } catch (_) {} n.close(); });
+      } catch (e) {
+        // Notification constructor can throw in some sandboxed contexts
+      }
+      flashTitle(title);
+      return false; // non-blocking
+    }
+
+    // Fallback: blocking alert (always works, every browser)
+    alert(`${title}\n\n${body}`);
+    return true; // blocking – caller should NOT use setTimeout delay
+  }
+
+  // ── Core timer logic ──────────────────────────────────────────────────────
+  function clearTicker() { clearInterval(ticker); ticker = null; }
+
+  function tick() {
+    timeLeft = Math.max(0, timeLeft - 1);
+    updateDisplay();
+
+    if (timeLeft > 0) return;
+
+    // Timer just hit zero
+    clearTicker();
+
+    if (state === 'work') {
+      setTimerClass('alert');
+      const blocking = notify('Time for a break!', 'Look away and rest your eyes.');
+      if (blocking) {
+        beginRest();
+      } else {
+        setTimeout(beginRest, 1200);
+      }
+    } else if (state === 'rest') {
+      setTimerClass('alert');
+      const blocking = notify('Break over!', 'Back to work – timer restarting.');
+      if (blocking) {
+        beginWork();
+      } else {
+        setTimeout(beginWork, 1200);
+      }
+    }
+  }
+
+  function startTicker() {
+    clearTicker();
+    ticker = setInterval(tick, 1000);
+  }
+
+  function beginWork() {
+    stopFlash();
+    state    = 'work';
+    timeLeft = toSec(workValue.value, workUnit.value);
+    setTimerClass('');
+    setLabel('Work');
+    updateDisplay();
+    startTicker();
+  }
+
+  function beginRest() {
+    stopFlash();
+    state    = 'rest';
+    timeLeft = toSec(restValue.value, restUnit.value);
+    setTimerClass('rest');
+    setLabel('Rest');
+    updateDisplay();
+    startTicker();
+  }
+
+  function setButtonsRunning() {
+    startBtn.disabled = true;
+    pauseBtn.disabled = false;
+    startBtn.textContent = 'Start';
+  }
+
+  function setButtonsPaused() {
+    startBtn.disabled = false;
+    pauseBtn.disabled = true;
+    startBtn.textContent = 'Resume';
+  }
+
+  function setButtonsIdle() {
+    startBtn.disabled = false;
+    pauseBtn.disabled = true;
+    startBtn.textContent = 'Start';
+  }
+
+  // ── Button handlers ───────────────────────────────────────────────────────
+  startBtn.addEventListener('click', async () => {
+    // Ask for permission on first Start (required by Firefox from user gesture)
+    if (notifSupported() && Notification.permission === 'default') {
+      await askNotifPermission();
+    }
+
+    if (state === 'idle') {
+      beginWork();
+      setButtonsRunning();
+    } else if (state === 'paused') {
+      // Resume whichever phase was active
+      state = pausedFrom;
+      pausedFrom = null;
+      setLabel(state === 'work' ? 'Work' : 'Rest');
+      startTicker();
+      setButtonsRunning();
+    }
+  });
+
+  pauseBtn.addEventListener('click', () => {
+    if (state !== 'work' && state !== 'rest') return;
+    clearTicker();
+    stopFlash();
+    pausedFrom = state;
+    state      = 'paused';
+    setLabel('Paused');
+    document.title = `Paused | Break Timer`;
+    setButtonsPaused();
+  });
+
+  resetBtn.addEventListener('click', () => {
+    clearTicker();
+    stopFlash();
+    state      = 'idle';
+    pausedFrom = null;
+    timeLeft   = toSec(workValue.value, workUnit.value);
+    setTimerClass('');
+    setLabel('Ready');
+    timerEl.textContent = fmt(timeLeft);
+    document.title = BASE_TITLE;
+    setButtonsIdle();
+  });
+
+  // ── Update display when settings change (only in idle state) ──────────────
+  function onSettingChange() {
+    if (state === 'idle') {
+      timeLeft = toSec(workValue.value, workUnit.value);
+      timerEl.textContent = fmt(timeLeft);
+    }
+  }
+  workValue.addEventListener('input',  onSettingChange);
+  workUnit.addEventListener('change',  onSettingChange);
+
+  // ── Init ──────────────────────────────────────────────────────────────────
+  timeLeft = toSec(workValue.value, workUnit.value);
+  timerEl.textContent = fmt(timeLeft);
+  updateNotifBar();
+</script>
+</body>
+</html>
